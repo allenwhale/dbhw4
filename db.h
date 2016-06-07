@@ -1,5 +1,7 @@
 #ifndef __DB__H__
 #define __DB__H__
+//#pragma GCC push_options
+//#pragma GCC optimize (3)
 #include <bits/stdc++.h>
 #define MAX_ROWS (1 << 24)
 using namespace std;

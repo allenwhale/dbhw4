@@ -1,3 +1,5 @@
+//#pragma GCC push_options
+//#pragma GCC optimize (3)
 #include <bits/stdc++.h>
 #include <unistd.h>
 #include <fcntl.h>
@@ -23,6 +25,8 @@ void db::setTempFileDir(const string& dir){
     else 
         tempFileDir = dir;
 }
+//__attribute__((optimize("unroll-loops", "inline")))
+//__attribute__((always_inline))
 inline int hash_string(const char *origin, int n) {
     register int res = 0;
     for(register int i=3;i--;i)
