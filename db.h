@@ -42,6 +42,38 @@ typedef struct rawEntry {
     int OriginDest;
     int ArrDelay;
 } __attribute__((packed)) rawEntry;
+template<class T> class Vector{
+    public:
+        T *_data;
+        unsigned long _max_size, _size;
+        Vector(){
+            _max_size = 16;
+            _size = 0;
+            _data = (T*)malloc(sizeof(T) * 16);
+        }
+        ~Vector(){
+            free(_data);
+        }
+        void push_back(const T &n){
+            if(_size >= _max_size){
+                _max_size <<= 1;
+                _data = (T*)realloc(_data, sizeof(T) * _max_size);
+            }
+            _data[_size++] = n;
+        }
+        __attribute__((always_inline)) T& operator [] (int n) {
+            return _data[n];
+        }
+        __attribute__((always_inline)) const T& operator [] (int n) const {
+            return _data[n];
+        }
+        __attribute__((always_inline)) unsigned long size() const {
+            return _size;
+        }
+        __attribute__((always_inline)) void clear() {
+            _size = 0;
+        }
+};
 class db{
 	public:
 		void init();                                     //Do your db initialization.
@@ -55,7 +87,7 @@ class db{
             int index;
             unsigned long offset, num;
         } offset;
-        unordered_map<int, vector<offset>> indexOffset;
+        unordered_map<int, Vector<offset>> indexOffset;
         bool index;
         rawEntry *rawData;
         int rowIndex;

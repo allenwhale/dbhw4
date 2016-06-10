@@ -7,6 +7,7 @@
 #include <sys/stat.h>
 #include <sys/mman.h>
 #include "db.h"
+#define strchr(x, c) (char*)rawmemchr((x), (c))
 using namespace std;
 
 void db::init(){
@@ -25,13 +26,28 @@ void db::setTempFileDir(const string& dir){
     else 
         tempFileDir = dir;
 }
+
+//__attribute__((optimize("unroll-loops", "inline")))
+//__attribute__((always_inline))
+inline int Atoi(register const char *s, const char *e){
+    register int res = 0;
+    bool neg = false;
+    if(*s == '-') neg = true, ++s;
+    do{
+        res = res * 10 + *s - '0';
+    }while(++s != e);
+    if(neg) return -res;
+    return res;
+}
 //__attribute__((optimize("unroll-loops", "inline")))
 //__attribute__((always_inline))
 inline int hash_string(const char *origin, int n) {
+    //if(n!=3)puts("error"), printf("%d\n", n);
     register int res = 0;
-    for(register int i=3;i--;i)
-        res = res << 5 | (*(origin++));
+    for(register int i=3;i--;)
+        res = res << 5 | (*(origin++) & 0x1F);
     return res;
+    //return origin[2] | origin[1] << 5 | origin[0] << 10;
 }
 void db::import(const string& csvFile){
     struct stat st;
@@ -39,10 +55,10 @@ void db::import(const string& csvFile){
     int fd = open(csvFile.c_str(), O_RDONLY);
     char *inptr = (char*)mmap(NULL, st.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
     close(fd);
-    register char *split = strchr(inptr, '\n'), *last, *ptr;
+    register char *split = strchr(inptr, '\n') + 1, *last, *ptr, *end = inptr + st.st_size;
     register rawEntry *entry;
-    while(split && split + 1 < inptr + st.st_size){
-        last = split + 1, ptr = strchr(last, ',');
+    while(split < end){
+        last = split, ptr = strchr(last, ',');
         last = ptr + 1, ptr = strchr(last, ',');
         last = ptr + 1, ptr = strchr(last, ',');
         last = ptr + 1, ptr = strchr(last, ',');
@@ -58,9 +74,10 @@ void db::import(const string& csvFile){
         last = ptr + 1, ptr = strchr(last, ',');
         last = ptr + 1, ptr = strchr(last, ',');
         //ArrDelay
-        if(memcmp(last, "NA", 2)){
+        if(*last != 'N'){
             entry = rawData + rowIndex;
-            entry->ArrDelay = atoi(last);
+            entry->ArrDelay = Atoi(last, ptr);
+            //entry->ArrDelay = atoi(last);
             last = ptr + 1, ptr = strchr(last, ',');
             last = ptr + 1, ptr = strchr(last, ',');
             //Origin
@@ -81,7 +98,7 @@ void db::import(const string& csvFile){
                 rowIndex = 0;
             }
         }
-        split = strchr(split + 1, '\n');
+        split = strchr(ptr + 20, '\n') + 1;
     }
     munmap(inptr, st.st_size);
     if(rowIndex){
@@ -100,7 +117,7 @@ void db::import(const string& csvFile){
 void db::createIndex() {
 	//Create index.
     register rawEntry *entry;
-    unordered_map<int, vector<int>> indexed[numOfFile];
+    unordered_map<long long, Vector<int>> indexed;
     string fileName;
     for(register int i=numOfFile;i--;){
         fileName = tempFileDir + to_string(i);
@@ -111,8 +128,8 @@ void db::createIndex() {
         close(fd);
         int rowCnt = st.st_size / rawEntrySize;
         entry = (rawEntry*)inptr;
-        for(register int j=0;j<rowCnt;++j, ++entry){
-            indexed[i][entry->OriginDest].push_back(entry->ArrDelay);
+        for(register int j=rowCnt;j--;++entry){
+            indexed[entry->OriginDest].push_back(entry->ArrDelay);
         }
         munmap(inptr, st.st_size);
         register int totalOffset = 0;
@@ -121,11 +138,12 @@ void db::createIndex() {
         write(fd, "", 1);
         lseek(fd, 0, SEEK_SET);
         register char *outptr = (char*)mmap(0, rowCnt * sizeof(int), PROT_WRITE | PROT_READ, MAP_SHARED, fd, 0);
-        for(auto &item: indexed[i]){
+        for(auto &item: indexed){
             indexOffset[item.first].push_back({i, totalOffset * sizeof(int), item.second.size()});
             memcpy(outptr + totalOffset * sizeof(int), (const void*)(int*)&item.second[0], sizeof(int) * item.second.size());
             //write(fd, (const void*)(int*)&item.second[0], sizeof(int) * item.second.size());
             totalOffset += item.second.size();
+            item.second.clear();
         }
         munmap(outptr, totalOffset * sizeof(int));
         close(fd);
@@ -146,12 +164,22 @@ double db::query(const string& origin, const string& dest){
             lseek(fd, off.offset, SEEK_SET);
             read(fd, in, off.num * sizeof(int));
             close(fd);
-            ptr = (int*)in;
-            for(register unsigned long j=off.num;j--;){
-                sum += *(ptr++);
+            ptr = ((int*)in) - 1;
+            //for(register unsigned long j=off.num;j--;){
+                //sum += *(++ptr);
+            //}
+            int num = off.num;
+            if(num & 1){
+                sum += *(++ptr);
+                num &= ~1;
+            }
+            for(register int j=num>>1;j--;){
+                sum += *(++ptr);
+                sum += *(++ptr);
             }
             cnt += off.num;
         }
+        //printf("%d %d\n", sum, cnt);
         return (double)sum / (double)cnt;
     } else {
         register int sum = 0, cnt = 0;
@@ -164,15 +192,38 @@ double db::query(const string& origin, const string& dest){
             char *inptr = (char*)mmap(NULL, st.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
             int rowCnt = st.st_size / rawEntrySize;
             entry = (rawEntry*)inptr;
-            for(register int j=rowCnt;j--;++entry){
+            if(rowCnt & 1){
                 if(entry->OriginDest == hashed){
                     sum += entry->ArrDelay;
                     ++cnt;
                 }
+                rowCnt &= ~1;
+                ++entry;
             }
+            for(register int j=rowCnt>>1;j--;){
+                //printf("%d\n", j);
+                if(entry->OriginDest == hashed){
+                    sum += entry->ArrDelay;
+                    ++cnt;
+                }
+                ++entry;
+                if(entry->OriginDest == hashed){
+                    sum += entry->ArrDelay;
+                    ++cnt;
+                }
+                ++entry;
+            }
+            //for(register int j=rowCnt;j--;++entry){
+                ////printf("%d\n", j);
+                //if(entry->OriginDest == hashed){
+                    //sum += entry->ArrDelay;
+                    //++cnt;
+                //}
+            //}
             close(fd);
             munmap(inptr, st.st_size);
         }
+            //printf("%d %d\n", sum, cnt);
         return (double)sum / (double)cnt;
     } 
 	return 0; //Remember to return your result.
@@ -182,6 +233,8 @@ void db::cleanup(){
 	//Release memory, close files and anything you should do to clean up your db class.
     for(int i=0;i<numOfFile;i++)
         remove((tempFileDir + "/" + to_string(i)).c_str());
+    //printf("%d %d\n", test.size(), indexOffset.size());
     delete [] rawData;
     delete [] in;
 }
+#undef strchr
