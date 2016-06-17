@@ -1,5 +1,5 @@
-//#pragma GCC push_options
-//#pragma GCC optimize (3)
+#pragma GCC push_options
+#pragma GCC optimize (3)
 #include <bits/stdc++.h>
 #include <unistd.h>
 #include <fcntl.h>
@@ -27,8 +27,7 @@ void db::setTempFileDir(const string& dir){
         tempFileDir = dir;
 }
 
-//__attribute__((optimize("unroll-loops", "inline")))
-//__attribute__((always_inline))
+__attribute__((always_inline))
 inline int Atoi(register const char *s, const char *e){
     register int res = 0;
     bool neg = false;
@@ -39,16 +38,7 @@ inline int Atoi(register const char *s, const char *e){
     if(neg) return -res;
     return res;
 }
-//__attribute__((optimize("unroll-loops", "inline")))
-//__attribute__((always_inline))
-inline int hash_string(const char *origin, int n) {
-    //if(n!=3)puts("error"), printf("%d\n", n);
-    register int res = 0;
-    for(register int i=3;i--;)
-        res = res << 5 | (*(origin++) & 0x1F);
-    return res;
-    //return origin[2] | origin[1] << 5 | origin[0] << 10;
-}
+#define hash_string(str) ((*(str) & 0x1F) << 10 | (*(str + 1) & 0x1F) << 5 | (*(str + 2) & 0x1F))
 void db::import(const string& csvFile){
     struct stat st;
     stat(csvFile.c_str(), &st);
@@ -77,14 +67,13 @@ void db::import(const string& csvFile){
         if(*last != 'N'){
             entry = rawData + rowIndex;
             entry->ArrDelay = Atoi(last, ptr);
-            //entry->ArrDelay = atoi(last);
             last = ptr + 1, ptr = strchr(last, ',');
             last = ptr + 1, ptr = strchr(last, ',');
             //Origin
-            entry->OriginDest = hash_string(last, ptr - last);
+            entry->OriginDest = hash_string(last);
             last = ptr + 1, ptr = strchr(last, ',');
             //Dest
-            entry->OriginDest = entry->OriginDest << 16 | hash_string(last, ptr - last);
+            entry->OriginDest = entry->OriginDest << 16 | hash_string(last);
             rowIndex++;
             if(rowIndex == MAX_ROWS){
                 fd = open((tempFileDir + to_string(numOfFile++)).c_str(), O_RDWR | O_CREAT, 0755);
@@ -154,7 +143,7 @@ void db::createIndex() {
 double db::query(const string& origin, const string& dest){
 	//Do the query and return the average ArrDelay of flights from origin to dest.
 	//This method will be called multiple times.
-    int hashed = hash_string(origin.c_str(), origin.size()) << 16 | hash_string(dest.c_str(), dest.size());
+    int hashed = hash_string(origin.c_str()) << 16 | hash_string(dest.c_str());
     if(index) {
         register int sum = 0, cnt = 0, *ptr;
         auto &indexOffsetItem = indexOffset[hashed];
